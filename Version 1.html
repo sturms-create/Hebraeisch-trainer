@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hebräisch Vokabeltrainer</title>
+    <link href="https://googleapis.com" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2b6cb0;
+            --success: #38a169;
+            --danger: #e53e3e;
+            --bg: #f7fafc;
+            --card-bg: #ffffff;
+            --text: #2d3748;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Rubik', sans-serif; }
+        body { background-color: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { max-width: 500px; width: 100%; background: var(--card-bg); padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        h1 { font-size: 1.5rem; margin-bottom: 20px; color: var(--primary); }
+        .import-zone { background: #edf2f7; border: 2px dashed #cbd5e0; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .import-zone input { display: none; }
+        .import-btn { background: var(--primary); color: white; padding: 8px 16px; border-radius: 5px; cursor: pointer; display: inline-block; font-size: 0.9rem; }
+        .stats { display: flex; justify-content: space-between; font-size: 0.85rem; color: #718096; margin-bottom: 20px; background: #f7fafc; padding: 8px; border-radius: 6px; }
+        .flashcard { background: var(--card-bg); border: 2px solid #e2e8f0; border-radius: 10px; padding: 50px 20px; margin-bottom: 20px; cursor: pointer; min-height: 200px; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: transform 0.2s; position: relative; }
+        .flashcard:active { transform: scale(0.98); }
+        
+        /* Hebräisch extra groß und zentriert */
+        .hebrew { font-size: 3rem; font-weight: bold; direction: rtl; unicode-bidi: bidi-override; margin-bottom: 10px; color: #1a202c; }
+        .translation { font-size: 1.6rem; font-weight: 500; color: var(--primary); margin-top: 15px; border-top: 1px dashed #e2e8f0; width: 100%; padding-top: 15px; }
+        
+        .hint { font-size: 0.8rem; color: #a0aec0; position: absolute; bottom: 10px; }
+        .buttons { display: flex; gap: 15px; justify-content: center; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 8px; color: white; font-size: 1rem; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-wrong { background-color: var(--danger); }
+        .btn-right { background-color: var(--success); }
+        .hidden { display: none !important; }
+        .msg { margin: 20px 0; font-weight: 500; color: #4a5568; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Hebräisch-Trainer 🇮🇱</h1>
+
+    <!-- CSV Import Bereich -->
+    <div id="importContainer" class="import-zone">
+        <p style="margin-bottom: 10px; font-size: 0.9rem;">CSV-Vokabelliste aus Excel hochladen (2 Spalten: Hebräisch;Deutsch):</p>
+        <label class="import-btn">
+            CSV-Datei auswählen
+            <input type="file" id="csvFile" accept=".csv">
+        </label>
+    </div>
+
+    <!-- Trainer Bereich -->
+    <div id="trainerContainer" class="hidden">
+        <div class="stats">
+            <span id="boxStatus">Box: -</span>
+            <span id="remainingStatus">Fällig: -</span>
+        </div>
+
+        <div class="flashcard" id="flashcard">
+            <div id="cardFront">
+                <div class="hebrew" id="vocabHebrew">-</div>
+            </div>
+            <div id="cardBack" class="hidden">
+                <div class="translation" id="vocabTranslation">-</div>
+            </div>
+            <div class="hint" id="cardHint">Klicken zum Aufdecken</div>
+        </div>
+
+        <div class="buttons hidden" id="actionButtons">
+            <button class="btn-wrong" onclick="handleAnswer(false)">Falsch</button>
+            <button class="btn-right" onclick="handleAnswer(true)">Gewusst</button>
+        </div>
+    </div>
+
+    <div id="emptyMessage" class="msg hidden">Super! Alle aktuellen Vokabeln für heute gelernt. 🎉</div>
+</div>
+
+<script>
+    // 1. HIER DEINE VOKABELN DIREKT EINTRAGEN (Weg B)
+    // Nur noch 2 Felder: h = Hebräisch, d = Deutsch
+    const defaultVocabulary = [
+       { h: 'עֵיר', d: 'Stadt' },
+{ h: 'פֶּה', d: 'Mund' },
+{ h: 'צֶדֶק', d: 'Gerechtigkeit' },
+{ h: 'קוֹל', d: 'Stimme' },
+{ h: 'רוּחַ', d: 'Wind, Geist' },
+{ h: 'שָׁלוֹם', d: 'Friede' },
+{ h: 'תְּהוֹם', d: 'Urflut, Ozean' },
+{ h: 'אַח', d: 'Bruder' },
+{ h: 'בָּרוּךְ', d: 'gesegnet' },
+{ h: 'גִּבּוֹר', d: 'Held' },
+{ h: 'דֶּרֶךְ', d: 'Weg' },
+{ h: 'הַר', d: 'Berg' },
+{ h: 'זוֹת', d: 'diese (f.)' },
+{ h: 'חֶסֶד', d: 'Güte, Treue, Gnade' },
+{ h: 'יַיִן', d: 'Wein' },
+{ h: 'כַּף', d: 'Handfläche' },
+{ h: 'לַיְלָה', d: 'Nacht' },
+{ h: 'מִצְוָה', d: 'Gebot' },
+{ h: 'נָעַר', d: 'Knabe, Knecht' },
+{ h: 'עֵץ', d: 'Baum' },
+{ h: 'פַּעַם', d: 'Mal, Schritt' },
+{ h: 'צָפוֹן', d: 'Norden' },
+{ h: 'קָדוֹשׁ', d: 'heilig' },
+{ h: 'רֹאשׁ', d: 'Kopf, Haupt' },
+{ h: 'שֶׁם', d: 'Name' },
+{ h: 'תְּפִלָּה', d: 'Gebet' },
+{ h: 'אָחֵר', d: 'ein anderer' },
+{ h: 'בְּרִית', d: 'Bund, Verpflichtung' },
+{ h: 'גַּן', d: 'Garten' },
+{ h: 'דִּבֵּר', d: 'reden (Pi'el)' },
+{ h: 'כַּף', d: 'Handfläche' },
+{ h: 'לַיְלָה', d: 'Nacht' },
+{ h: 'מִצְוָה', d: 'Gebot' },
+{ h: 'נָעַר', d: 'Knabe, Knecht' },
+{ h: 'עֵץ', d: 'Baum' },
+{ h: 'פַּעַם', d: 'Mal, Schritt' },
+{ h: 'צָפוֹן', d: 'Norden' },
+{ h: 'קָדוֹשׁ', d: 'heilig' },
+{ h: 'רֹאשׁ', d: 'Kopf, Haupt' },
+{ h: 'שֶׁם', d: 'Name' },
+{ h: 'תְּפִלָּה', d: 'Gebet' },
+{ h: 'אָחֵר', d: 'ein anderer' },
+{ h: 'בְּרִית', d: 'Bund, Verpflichtung' },
+{ h: 'גַּן', d: 'Garten' },
+{ h: 'דִּבֵּר', d: 'reden (Pi'el)' },
+{ h: 'כַּף', d: 'Handfläche' },
+{ h: 'לַיְלָה', d: 'Nacht' },
+{ h: 'מִצְוָה', d: 'Gebot' },
+{ h: 'נָעַר', d: 'Knabe, Knecht' },
+{ h: 'עֵץ', d: 'Baum' },
+{ h: 'פַּעַם', d: 'Mal, Schritt' },
+{ h: 'צָפוֹן', d: 'Norden' },
+{ h: 'קָדוֹשׁ', d: 'heilig' },
+{ h: 'רֹאשׁ', d: 'Kopf, Haupt' },
+{ h: 'שֶׁם', d: 'Name' },
+{ h: 'תְּפִלָּה', d: 'Gebet' },
+{ h: 'אָחֵר', d: 'ein anderer' },
+{ h: 'בְּרִית', d: 'Bund, Verpflichtung' },
+{ h: 'גַּן', d: 'Garten' },
+{ h: 'דִּבֵּר', d: 'reden (Pi'el)' },
+{ h: 'כַּף', d: 'Handfläche' },
+{ h: 'לַיְלָה', d: 'Nacht' },
+{ h: 'מִצְוָה', d: 'Gebot' },
+{ h: 'נָעַר', d: 'Knabe, Knecht' },
+{ h: 'עֵץ', d: 'Baum' },
+{ h: 'פַּעַם', d: 'Mal, Schritt' },
+{ h: 'צָפוֹן', d: 'Norden' },
+{ h: 'קָדוֹשׁ', d: 'heilig' },
+{ h: 'רֹאשׁ', d: 'Kopf, Haupt' },
+{ h: 'שֶׁם', d: 'Name' },
+{ h: 'תְּפִלָּה', d: 'Gebet' },
+{ h: 'אָחֵר', d: 'ein anderer' },
+{ h: 'בְּרִית', d: 'Bund, Verpflichtung' },
+{ h: 'גַּן', d: 'Garten' },
+{ h: 'דִּבֵּר', d: 'reden (Pi'el)' },
+{ h: 'חָיָה', d: 'leben' },
+{ h: 'טָהוֹר', d: 'rein' },
+{ h: 'יָרֵא', d: 'fürchten' },
+{ h: 'כִּסֵּא', d: 'Thron' },
+{ h: 'לֵאמֹר', d: 'zu sagen' },
+{ h: 'מִשְׁפָּט', d: 'Recht, Gericht' },
+{ h: 'נֶפֶשׁ', d: 'Seele, Person' },
+{ h: 'עֵדָה', d: 'Gemeinde' },
+{ h: 'פֶּשַׁע', d: 'Vergehen, Rebellion' },
+{ h: 'צַדִּיק', d: 'gerecht' },
+{ h: 'קָדֵשׁ', d: 'heilig sein' },
+{ h: 'רָחוֹק', d: 'fern' },
+{ h: 'שָׁמַר', d: 'bewahren, halten' },
+{ h: 'תַּשְׁלוּם', d: 'Zahlung, Vergeltung' },
+{ h: 'אֹרַח', d: 'Weg, Pfad' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' },
+{ h: 'מָלַךְ', d: 'König sein' },
+{ h: 'נָשָׂא', d: 'tragen' },
+{ h: 'עָבַר', d: 'überqueren, vorübergehen' },
+{ h: 'פָּר', d: 'Jungstier' },
+{ h: 'קֶרֶב', d: 'Inneres, Mitte' },
+{ h: 'בְּרָכָה', d: 'Segen' },
+{ h: 'גָּעַל', d: 'verabscheuen' },
+{ h: 'דָּוִד', d: 'David' },
+{ h: 'הֶרֶג', d: 'Tötung' },
+{ h: 'וַיְהִי', d: 'und es geschah' },
+{ h: 'זִכָּרוֹן', d: 'Erinnerung' },
+{ h: 'חַי', d: 'lebendig' },
+{ h: 'יָצָא', d: 'hinausgehen' },
+{ h: 'כֹּחַ', d: 'Kraft' },
+{ h: 'לֹא', d: 'nicht' }
+
+
+    ];
+
+    let vocabulary = [];
+    let currentCard = null;
+    let isFlipped = false;
+
+    // Zeit-Intervalle für Box 1 bis 5 (Schul-Modus)
+    const BOX_INTERVALS = [
+        0,                      // Box 1: Sofort wieder fällig
+        5 * 60 * 1000,          // Box 2: nach 5 Minuten
+        60 * 60 * 1000,         // Box 4: nach 1 Stunde
+        24 * 60 * 60 * 1000,    // Box 4: nach 1 Tag
+        5 * 24 * 60 * 60 * 1000 // Box 5: nach 5 Tagen
+    ];
+
+    window.onload = function() {
+        const savedData = localStorage.getItem('hebrew_vocab_v4');
+        if (savedData) {
+            vocabulary = JSON.parse(savedData);
+            startTrainer();
+        } else if (defaultVocabulary.length > 0) {
+            initVocabularyWithArray(defaultVocabulary);
+            startTrainer();
+        }
+        document.getElementById('csvFile').addEventListener('change', handleFileUpload);
+        document.getElementById('flashcard').addEventListener('click', flipCard);
+    };
+
+    function initVocabularyWithArray(arrayData) {
+        vocabulary = arrayData.map((item, index) => {
+            return {
+                id: index + 1,
+                hebrew: item.h,
+                translation: item.d,
+                box: 1,
+                nextReview: Date.now()
+            };
+        });
+        saveToLocalStorage();
+    }
+
+    function handleFileUpload(e) {
+        const filesList = e.target.files;
+        if (!filesList) return;
+        const targetFile = filesList.item(0);
+        if (!targetFile) return;
+
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            processCSV(evt.target.result);
+        };
+        reader.readAsText(targetFile, 'UTF-8');
+    }
+
+    function processCSV(text) {
+        const lines = text.split('\n');
+        const loadedVocab = [];
+
+        // Zeile 0 (Header) überspringen
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines.at(i);
+            if (!line || !line.trim()) continue;
+            
+            const columns = line.split(';');
+            if (columns.length >= 2) {
+                loadedVocab.push({
+                    h: columns.at(0).trim(),
+                    d: columns.at(1).trim()
+                });
+            }
+        }
+
+        if (loadedVocab.length > 0) {
+            initVocabularyWithArray(loadedVocab);
+            startTrainer();
+            alert("Vokabeln erfolgreich importiert!");
+        } else {
+            alert("Fehler: CSV ungültig. Trenne Spalten mit einem Semikolon (;).");
+        }
+    }
+
+    function saveToLocalStorage() {
+        localStorage.setItem('hebrew_vocab_v4', JSON.stringify(vocabulary));
+    }
+
+    function startTrainer() {
+        document.getElementById('trainerContainer').classList.remove('hidden');
+        showNextCard();
+    }
+
+    function showNextCard() {
+        isFlipped = false;
+        document.getElementById('cardBack').classList.add('hidden');
+        document.getElementById('actionButtons').classList.add('hidden');
+        document.getElementById('cardHint').classList.remove('hidden');
+
+        const now = Date.now();
+        let dueCards = vocabulary.filter(card => card.nextReview <= now);
+        dueCards.sort((a, b) => a.box - b.box);
+
+        document.getElementById('remainingStatus').innerText = `Fällig: ${dueCards.length}`;
+
+        if (dueCards.length === 0) {
+            document.getElementById('flashcard').classList.add('hidden');
+            document.getElementById('emptyMessage').classList.remove('hidden');
+            document.getElementById('boxStatus').innerText = "Box: -";
+            currentCard = null;
+            return;
+        }
+
+        document.getElementById('flashcard').classList.remove('hidden');
+        document.getElementById('emptyMessage').classList.add('hidden');
+
+        currentCard = dueCards.at(0); 
+        
+        document.getElementById('vocabHebrew').innerText = currentCard.hebrew;
+        document.getElementById('vocabTranslation').innerText = currentCard.translation;
+        document.getElementById('boxStatus').innerText = `Box: ${currentCard.box} / 5`;
+    }
+
+    function flipCard() {
+        if (!currentCard || isFlipped) return;
+        isFlipped = true;
+        document.getElementById('cardBack').classList.remove('hidden');
+        document.getElementById('actionButtons').classList.remove('hidden');
+        document.getElementById('cardHint').classList.add('hidden');
+    }
+
+    function handleAnswer(wasCorrect) {
+        if (!currentCard) return;
+
+        if (wasCorrect) {
+            if (currentCard.box < 5) currentCard.box += 1;
+        } else {
+            currentCard.box = 1;
+        }
+
+        const currentBoxIndex = currentCard.box - 1;
+        const interval = BOX_INTERVALS.at(currentBoxIndex);
+        currentCard.nextReview = Date.now() + interval;
+
+        saveToLocalStorage();
+        showNextCard();
+    }
+</script>
+
+</body>
+</html>
